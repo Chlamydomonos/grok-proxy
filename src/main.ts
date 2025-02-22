@@ -60,8 +60,9 @@ const handleReq = async (
     req: Request,
     res: Response
 ) => {
+    console.log('\x1B[36mRequest recieved');
     const authorization = req.headers.authorization;
-    let cookie: Cookie | undefined;
+    let cookie: { cookie: Cookie; file: string; index: number } | undefined;
     if (authorization) {
         const match = /#(0-9)+/.exec(authorization);
         if (match) {
@@ -74,11 +75,14 @@ const handleReq = async (
     }
 
     if (!cookie) {
+        console.log('\x1B[31mNo cookie available, aborted request\n');
         res.status(429).send('Cookie已超出限额');
         return;
     }
 
-    const page = await createPage(browser, cookie);
+    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\n`);
+
+    const page = await createPage(browser, cookie.cookie);
     pageSetter(page);
 
     await routePage(page, res, abortController);
@@ -121,7 +125,7 @@ const main = async () => {
     app.use(express.json());
 
     app.get('/v1/models', (_, res) => {
-        res.send(['grok-3']);
+        res.send({ data: [{ id: 'grok-3' }] });
     });
 
     app.post(
@@ -145,7 +149,7 @@ const main = async () => {
     );
 
     app.listen(config.port, () => {
-        console.log(`Server listening on ${config.port}`);
+        console.log(`\n\x1B[37m\x1B[1mServer listening on ${config.port}\n`);
     });
 };
 

@@ -83,9 +83,12 @@ export type Cookie = ReturnType<typeof getSessionCookie>;
 export const createCookiePool = () => {
     const cookieDir = path.resolve(__dirname, '../cookies');
     const cookieFiles = fs.readdirSync(cookieDir).filter((s) => s.endsWith('.txt'));
-    const pool = cookieFiles.map((f) => {
+    console.log('\x1B[36mLoading cookies...');
+    const pool = cookieFiles.map((f, index) => {
+        console.log(`\x1B[37mCooke #${index}: ${f}`);
         const cookieContent = fs.readFileSync(path.resolve(cookieDir, f)).toString();
-        return getSessionCookie(cookieContent);
+        return { cookie: getSessionCookie(cookieContent), file: f, index };
     });
+    console.log(`\x1B[36mLoaded ${pool.length} cookies`);
     return new CookiePool(pool);
 };
