@@ -75,12 +75,12 @@ const handleReq = async (
     }
 
     if (!cookie) {
-        console.log('\x1B[31mNo cookie available, aborted request\n');
+        console.log('\x1B[31mNo cookie available, aborted request\n\x1B[0m');
         res.status(429).send('Cookie已超出限额');
         return;
     }
 
-    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\n`);
+    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\n\x1B[0m`);
 
     const page = await createPage(browser, cookie.cookie);
     pageSetter(page);
@@ -149,7 +149,7 @@ const main = async () => {
     );
 
     app.listen(config.port, () => {
-        console.log(`\n\x1B[37m\x1B[1mServer listening on ${config.port}\n`);
+        console.log(`\n\x1B[37m\x1B[1mServer listening on ${config.port}\x1B[0m\n`);
     });
 };
 
