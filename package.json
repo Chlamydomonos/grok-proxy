@@ -1,0 +1,18 @@
+{
+    "devDependencies": {
+        "@types/express": "^5.0.0",
+        "@types/node": "^22.13.5",
+        "typescript": "^5.7.3"
+    },
+    "dependencies": {
+        "axios": "^1.7.9",
+        "express": "^4.21.2",
+        "playwright": "^1.50.1",
+        "yaml": "^2.7.0"
+    },
+    "scripts": {
+        "postinstall": "playwright install && node ./gen-config.mjs",
+        "build": "tsc --build",
+        "start": "pnpm build && node ./dist/main.js"
+    }
+}

@@ -1,0 +1,5 @@
+config.yml
+dist
+cookies/*
+!cookies/说明.md
+node_modules

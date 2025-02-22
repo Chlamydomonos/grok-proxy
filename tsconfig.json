@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "incremental": true,
+        "tsBuildInfoFile": "dist/.tsbuildinfo",
+        "target": "ESNext",
+        "experimentalDecorators": true,
+        "module": "NodeNext",
+        "rootDir": "./src",
+        "moduleResolution": "nodenext",
+        "sourceMap": true,
+        "declaration": true,
+        "outDir": "./dist",
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "skipLibCheck": true
+    },
+    "include": ["src/**/*"]
+}
