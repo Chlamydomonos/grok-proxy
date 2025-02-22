@@ -1,3 +1,4 @@
 channel: chromium # 使用的浏览器（建议就用chromium）
 headless: true # 是否使用无头模式
 port: 3000 # 反代端口
+maxTimeout: 10000 # 最大超时（毫秒），如果超过该时间还没有收到回复则认为Cookie无效

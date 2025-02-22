@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import { callGrok } from './call-grok';
 import { Cookie, createCookiePool } from './cookie-pool';
 import { loadConfig } from './load-config';
+import EventEmitter from 'events';
 
 const config = loadConfig();
 
@@ -41,30 +42,35 @@ const createPage = async (browser: Browser, cookie: Cookie) => {
 };
 
 const routePage = async (page: Page, res: Response, abortController: AbortController) => {
+    const timeoutEmitter = new EventEmitter();
+
+    let streamStarted = false;
+    setTimeout(() => {
+        if (!streamStarted) {
+            timeoutEmitter.emit('timeout');
+        }
+    }, config.maxTimeout);
+
     await page.route('**/*', async (route, request) => {
         const url = request.url();
         if (url.includes('/2/grok/add_response.json') && request.method() === 'POST') {
+            streamStarted = true;
             callGrok(page, request, res, abortController);
         } else {
             await route.continue();
         }
     });
+
+    return timeoutEmitter;
 };
 
 const cookiePool = createCookiePool();
-
-export async function locatorExists(locator: Locator, timeout = 3000): Promise<boolean> {
-    const __locatorExists = async (__locator: Locator) =>
-        !((await __locator.waitFor({ timeout: timeout }).catch((e: Error) => e)) instanceof Error);
-    const exists = await __locatorExists(locator);
-
-    return exists;
-}
 
 const handleReq = async (
     browser: Browser,
     pageSetter: (page: Page) => void,
     abortController: AbortController,
+    abortEmitter: EventEmitter,
     req: Request,
     res: Response
 ) => {
@@ -93,7 +99,12 @@ const handleReq = async (
     const page = await createPage(browser, cookie.cookie);
     pageSetter(page);
 
-    await routePage(page, res, abortController);
+    const timeoutEmitter = await routePage(page, res, abortController);
+    timeoutEmitter.on('timeout', () => {
+        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
+        res.status(500).send('Internal error');
+        abortEmitter.emit('abort');
+    });
 
     const reqMessages = req.body.messages as {
         role: string;
@@ -106,22 +117,9 @@ const handleReq = async (
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[1]/div/div[1]/div/textarea';
     const input = page.locator(`xpath=${inputXPath}`);
 
-    if (!(await locatorExists(input))) {
-        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
-        page.close();
-        res.status(500).send('Internal Error');
-        return;
-    }
-
     const sendXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[2]/div[2]/button[2]';
     const sendButton = page.locator(`xpath=${sendXPath}`);
-    if (!(await locatorExists(sendButton))) {
-        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
-        page.close();
-        res.status(500).send('Internal Error');
-        return;
-    }
 
     await input.fill(reqMessageText);
     await sendButton.click();
@@ -146,9 +144,11 @@ const main = async () => {
         (req, res) =>
             new Promise<void>((resolve) => {
                 const abortController = new AbortController();
+                const abortEmitter = new EventEmitter();
                 let page: Page | undefined;
                 let finished = false;
-                res.on('close', () => {
+
+                const abort = () => {
                     if (finished) {
                         return;
                     }
@@ -158,14 +158,20 @@ const main = async () => {
                         page = undefined;
                     }
                     resolve();
-                });
+                };
 
-                handleReq(browser, (p) => (page = p), abortController, req, res)
+                res.on('close', abort);
+                abortEmitter.on('abort', abort);
+
+                handleReq(browser, (p) => (page = p), abortController, abortEmitter, req, res)
                     .then(() => {
                         finished = true;
                         resolve();
                     })
-                    .catch(() => {})
+                    .catch((e) => {
+                        console.log(e);
+                        console.log('\n');
+                    })
                     .finally(() => {
                         finished = true;
                         resolve();
