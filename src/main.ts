@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import type { Browser, Page } from 'playwright';
+import type { Browser, Locator, Page } from 'playwright';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { callGrok } from './call-grok';
@@ -53,6 +53,14 @@ const routePage = async (page: Page, res: Response, abortController: AbortContro
 
 const cookiePool = createCookiePool();
 
+export async function locatorExists(locator: Locator, timeout = 3000): Promise<boolean> {
+    const __locatorExists = async (__locator: Locator) =>
+        !((await __locator.waitFor({ timeout: timeout }).catch((e: Error) => e)) instanceof Error);
+    const exists = await __locatorExists(locator);
+
+    return exists;
+}
+
 const handleReq = async (
     browser: Browser,
     pageSetter: (page: Page) => void,
@@ -97,8 +105,10 @@ const handleReq = async (
     const inputXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[1]/div/div[1]/div/textarea';
     const input = page.locator(`xpath=${inputXPath}`);
-    if ((await input.count()) == 0) {
+
+    if (!(await locatorExists(input))) {
         console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
+        page.close();
         res.status(500).send('Internal Error');
         return;
     }
@@ -106,8 +116,9 @@ const handleReq = async (
     const sendXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[2]/div[2]/button[2]';
     const sendButton = page.locator(`xpath=${sendXPath}`);
-    if ((await sendButton.count()) == 0) {
+    if (!(await locatorExists(sendButton))) {
         console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
+        page.close();
         res.status(500).send('Internal Error');
         return;
     }
