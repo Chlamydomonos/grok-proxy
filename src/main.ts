@@ -97,7 +97,8 @@ const handleReq = async (
     const inputXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[1]/div/div[1]/div/textarea';
     const input = page.locator(`xpath=${inputXPath}`);
-    if (!input) {
+    if ((await input.count()) == 0) {
+        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
         res.status(500).send('Internal Error');
         return;
     }
@@ -105,7 +106,8 @@ const handleReq = async (
     const sendXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[2]/div[2]/button[2]';
     const sendButton = page.locator(`xpath=${sendXPath}`);
-    if (!sendButton) {
+    if ((await sendButton.count()) == 0) {
+        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
         res.status(500).send('Internal Error');
         return;
     }
@@ -134,17 +136,29 @@ const main = async () => {
             new Promise<void>((resolve) => {
                 const abortController = new AbortController();
                 let page: Page | undefined;
+                let finished = false;
                 res.on('close', () => {
+                    if (finished) {
+                        return;
+                    }
                     abortController.abort();
                     if (page) {
                         page.close();
+                        page = undefined;
                     }
                     resolve();
                 });
 
                 handleReq(browser, (p) => (page = p), abortController, req, res)
-                    .then(resolve)
-                    .catch(resolve);
+                    .then(() => {
+                        finished = true;
+                        resolve();
+                    })
+                    .catch(() => {})
+                    .finally(() => {
+                        finished = true;
+                        resolve();
+                    });
             })
     );
 
