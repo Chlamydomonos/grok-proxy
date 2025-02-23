@@ -1,28 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
-// DeepSeek生成
 class CookiePool<T> {
-    private cookies: T[];
-    private usageMap: Array<Array<number>>;
+    private remainingQuotas: number[];
+    private timers: (NodeJS.Timeout | null)[];
 
-    constructor(cookies: T[]) {
-        this.cookies = cookies;
-        this.usageMap = cookies.map(() => []);
-    }
-
-    private cleanupOldEntries(times: number[], cutoff: number): void {
-        let low = 0,
-            high = times.length;
-        while (low < high) {
-            const mid = (low + high) >>> 1;
-            if (times[mid] < cutoff) {
-                low = mid + 1;
-            } else {
-                high = mid;
-            }
-        }
-        times.splice(0, low);
+    constructor(private cookies: T[], private maxQuota: number = 20, private recoverTimeMs: number = 7200000) {
+        this.remainingQuotas = cookies.map(() => maxQuota);
+        this.timers = new Array(cookies.length).fill(null);
     }
 
     getCookie(index: number): T | undefined {
@@ -30,30 +15,26 @@ class CookiePool<T> {
             return undefined;
         }
 
-        const now = Date.now();
-        const twoHoursAgo = now - 7200000; // 2小时对应的毫秒数
-        const times = this.usageMap[index];
-
-        this.cleanupOldEntries(times, twoHoursAgo);
-
-        if (times.length >= 15) {
+        if (this.remainingQuotas[index] <= 0) {
             return undefined;
         }
 
-        times.push(now);
+        this.remainingQuotas[index]--;
+
+        if (!this.timers[index]) {
+            this.timers[index] = setTimeout(() => {
+                this.remainingQuotas[index] = this.maxQuota;
+                this.timers[index] = null;
+            }, this.recoverTimeMs);
+        }
+
         return this.cookies[index];
     }
 
     getRandom(): T | undefined {
-        const now = Date.now();
-        const twoHoursAgo = now - 7200000;
         const availableIndices: number[] = [];
-
-        for (let i = 0; i < this.cookies.length; i++) {
-            const times = this.usageMap[i];
-            this.cleanupOldEntries(times, twoHoursAgo);
-
-            if (times.length < 15) {
+        for (let i = 0; i < this.remainingQuotas.length; i++) {
+            if (this.remainingQuotas[i] > 0) {
                 availableIndices.push(i);
             }
         }
@@ -63,19 +44,31 @@ class CookiePool<T> {
         }
 
         const randomIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
-        const selectedTimes = this.usageMap[randomIndex];
-        selectedTimes.push(now);
+
+        this.remainingQuotas[randomIndex]--;
+
+        if (!this.timers[randomIndex]) {
+            this.timers[randomIndex] = setTimeout(() => {
+                this.remainingQuotas[randomIndex] = this.maxQuota;
+                this.timers[randomIndex] = null;
+            }, this.recoverTimeMs);
+        }
 
         return this.cookies[randomIndex];
     }
 }
 
 const getSessionCookie = (cookieString: string) => {
-    const sessionCookie = cookieString.split('; ').map((pair) => {
-        const [name, value] = pair.split('=');
-        return { name, value, domain: '.x.com', path: '/' };
-    });
-    return sessionCookie;
+    const matchRe = /([^;\s]+)=([^;\s]+);/g;
+    let result: { name: string; value: string; domain: string; path: string }[] = [];
+    while (true) {
+        let newMatch = matchRe.exec(cookieString);
+        if (!newMatch) {
+            return result;
+        }
+
+        result.push({ name: newMatch[1], value: newMatch[2], domain: '.x.com', path: '/' });
+    }
 };
 
 export type Cookie = ReturnType<typeof getSessionCookie>;

@@ -84,7 +84,7 @@ export const initPage = async (browser: Browser, cookie: Cookie, res: Response, 
         const url = request.url();
         if (url.includes('/2/grok/add_response.json') && request.method() === 'POST') {
             streamStarted = true;
-            callGrok(wrapper, request, res, abortController, finishEmitter);
+            await callGrok(wrapper, request, res, abortController, finishEmitter);
         } else {
             await route.continue();
         }

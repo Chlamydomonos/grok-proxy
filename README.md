@@ -1,7 +1,5 @@
 # Grok反代
 
-仍然处于早期阶段
-
 使用方式：
 - `pnpm install`安装依赖（没有pnpm的话npm应该也行）
 - 修改`config.yml`
