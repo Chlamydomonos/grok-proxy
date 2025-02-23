@@ -1,6 +1,8 @@
 import type { Response } from 'express';
-import type { Page, Request } from 'playwright';
+import type { Request } from 'playwright';
 import axios from 'axios';
+import type { PageWrapper } from './init-page';
+import type { EventEmitter } from 'stream';
 
 const buildResJson = (message: string) => ({
     choices: [
@@ -13,7 +15,13 @@ const buildResJson = (message: string) => ({
     ],
 });
 
-export const callGrok = async (page: Page, request: Request, response: Response, abortController: AbortController) => {
+export const callGrok = async (
+    page: PageWrapper,
+    request: Request,
+    response: Response,
+    abortController: AbortController,
+    finishEmitter: EventEmitter<{ finish: [] }>
+) => {
     try {
         const axiosRes = await axios.post(request.url(), request.postDataJSON(), {
             headers: request.headers(),
@@ -22,6 +30,8 @@ export const callGrok = async (page: Page, request: Request, response: Response,
         });
 
         const stream = axiosRes.data;
+
+        console.log('\x1B[2mStreaming response...\x1B[0m');
 
         stream.on('data', (chunk: Buffer) => {
             const lines = chunk.toString().split('\n');
@@ -33,6 +43,7 @@ export const callGrok = async (page: Page, request: Request, response: Response,
                         if (message) {
                             const streamJson = buildResJson(message);
                             response.write(`data: ${JSON.stringify(streamJson)}\n\n`);
+                            page.resSent = true;
                         }
                     }
                 } catch (e) {
@@ -42,8 +53,12 @@ export const callGrok = async (page: Page, request: Request, response: Response,
         });
 
         stream.on('end', () => {
+            console.log('\x1B[2mStream response finished\x1B[0m');
             response.write('data: [DONE]\n\n');
             response.end();
+            finishEmitter.emit('finish');
+            page.resSent = true;
+            page.resEnded = true;
             page.close();
         });
     } catch (e) {

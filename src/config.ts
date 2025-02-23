@@ -26,7 +26,7 @@ const checkConfig = (config: any): config is Config => {
     return true;
 };
 
-export const loadConfig = () => {
+const loadConfig = () => {
     const configPath = path.resolve(__dirname, '../config.yml');
     const config = yaml.parse(fs.readFileSync(configPath).toString());
     if (!checkConfig(config)) {
@@ -35,3 +35,5 @@ export const loadConfig = () => {
     }
     return config;
 };
+
+export const config = loadConfig();

@@ -1,87 +1,36 @@
-import { chromium } from 'playwright';
-import type { Browser, Locator, Page } from 'playwright';
-import express from 'express';
-import type { Request, Response } from 'express';
-import { callGrok } from './call-grok';
-import { Cookie, createCookiePool } from './cookie-pool';
-import { loadConfig } from './load-config';
 import EventEmitter from 'events';
+import type { Request, Response } from 'express';
+import express from 'express';
+import type { Browser } from 'playwright';
+import { chromium } from 'playwright';
+import { config } from './config';
+import { Cookie, createCookiePool } from './cookie-pool';
+import { initPage, type PageWrapper } from './init-page';
 
-const config = loadConfig();
-
-const createPage = async (browser: Browser, cookie: Cookie) => {
-    const context = await browser.newContext({
-        userAgent:
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-        extraHTTPHeaders: {
-            'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-        },
-        bypassCSP: true,
-    });
-
-    // wtf (从原项目复制来的，强烈怀疑并不需要)
-    await context.addInitScript(() => {
-        // 部分伪装，不完全移除
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined, // 不返回 false，而是 undefined
-        });
-
-        // 模拟真实浏览器特征
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [{ name: 'Chrome PDF Plugin' }, { name: 'Chrome PDF Viewer' }],
-        });
-    });
-
-    await context.addCookies(cookie);
-
-    const page = await context.newPage();
-    page.goto('https://x.com/i/grok');
-    return page;
-};
-
-const routePage = async (page: Page, res: Response, abortController: AbortController) => {
-    const timeoutEmitter = new EventEmitter();
-
-    let streamStarted = false;
-    setTimeout(() => {
-        if (!streamStarted) {
-            timeoutEmitter.emit('timeout');
-        }
-    }, config.maxTimeout);
-
-    await page.route('**/*', async (route, request) => {
-        const url = request.url();
-        if (url.includes('/2/grok/add_response.json') && request.method() === 'POST') {
-            streamStarted = true;
-            callGrok(page, request, res, abortController);
-        } else {
-            await route.continue();
-        }
-    });
-
-    return timeoutEmitter;
-};
+console.log("\n\n\x1B[1m\x1B[32mChlamydomonos' Grok-3 Proxy\x1B[0m");
+console.log('\n\n\n\n');
 
 const cookiePool = createCookiePool();
 
 const handleReq = async (
     browser: Browser,
-    pageSetter: (page: Page) => void,
+    pageSetter: (page: PageWrapper) => void,
     abortController: AbortController,
-    abortEmitter: EventEmitter,
+    abortEmitter: EventEmitter<{ abort: [] }>,
     req: Request,
     res: Response
 ) => {
-    console.log('\x1B[36mRequest recieved');
+    console.log(`\n\x1B[36m[${new Date().toLocaleString()}] Request received\x1B[0m`);
     const authorization = req.headers.authorization;
     let cookie: { cookie: Cookie; file: string; index: number } | undefined;
     if (authorization) {
         const match = /#(0-9)+/.exec(authorization);
         if (match) {
-            cookie = cookiePool.getCookie(parseInt(match[1]));
+            const cookieId = parseInt(match[1]);
+            console.log(`Trying to use cookie #${cookieId}`);
+            cookie = cookiePool.getCookie(cookieId);
         } else {
+            console.log(`Trying to use a random cookie`);
             cookie = cookiePool.getRandom();
         }
     } else {
@@ -89,20 +38,18 @@ const handleReq = async (
     }
 
     if (!cookie) {
-        console.log('\x1B[31mNo cookie available, aborted request\n\x1B[0m');
+        console.log('\x1B[31mNo cookie available, aborted request\x1B[0m');
         res.status(429).send('Cookie已超出限额');
         return;
     }
 
-    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\n\x1B[0m`);
+    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\x1B[0m`);
 
-    const page = await createPage(browser, cookie.cookie);
-    pageSetter(page);
+    const pageWrapper = await initPage(browser, cookie.cookie, res, abortController);
+    pageSetter(pageWrapper);
 
-    const timeoutEmitter = await routePage(page, res, abortController);
-    timeoutEmitter.on('timeout', () => {
-        console.log('\x1B[31mThis cookie is invalid\n\x1B[0m');
-        res.status(500).send('Internal error');
+    pageWrapper.timeoutEmitter.on('timeout', () => {
+        console.log('\x1B[31mThis cookie is invalid\x1B[0m');
         abortEmitter.emit('abort');
     });
 
@@ -115,14 +62,19 @@ const handleReq = async (
 
     const inputXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[1]/div/div[1]/div/textarea';
-    const input = page.locator(`xpath=${inputXPath}`);
+    const input = pageWrapper.page.locator(`xpath=${inputXPath}`);
 
     const sendXPath =
         '/html/body/div[1]/div/div/div[2]/main/div/div/div/div/div/div[3]/div/div/div/div/div[1]/div/div/div/div[2]/div[2]/button[2]';
-    const sendButton = page.locator(`xpath=${sendXPath}`);
+    const sendButton = pageWrapper.page.locator(`xpath=${sendXPath}`);
 
-    await input.fill(reqMessageText);
-    await sendButton.click();
+    if (!pageWrapper.closed) {
+        await input.fill(reqMessageText);
+        await sendButton.click();
+        await new Promise<void>((resolve) => {
+            pageWrapper.finishEmitter.on('finish', resolve);
+        });
+    }
 };
 
 const main = async () => {
@@ -139,45 +91,65 @@ const main = async () => {
         res.send({ data: [{ id: 'grok-3' }] });
     });
 
-    app.post(
-        '/v1/chat/completions',
-        (req, res) =>
-            new Promise<void>((resolve) => {
-                const abortController = new AbortController();
-                const abortEmitter = new EventEmitter();
-                let page: Page | undefined;
-                let finished = false;
+    app.post('/v1/chat/completions', async (req, res) => {
+        let creatingPage = true;
+        let needCloseImmediately = false;
+        let page: PageWrapper | undefined;
 
-                const abort = () => {
-                    if (finished) {
-                        return;
+        const clean = () => {
+            if (creatingPage) {
+                needCloseImmediately = true;
+                return;
+            }
+            if (page) {
+                page.close();
+            }
+        };
+
+        const pageSetter = (resolve: () => void) => (p: PageWrapper) => {
+            page = p;
+            creatingPage = false;
+            if (needCloseImmediately) {
+                clean();
+                resolve();
+            }
+        };
+
+        try {
+            const abortController = new AbortController();
+            const abortEmitter = new EventEmitter<{ abort: [] }>();
+
+            await new Promise<void>((resolve) => {
+                res.on('close', () => {
+                    if (!page || !page.resEnded) {
+                        console.log('\x1B[2mThe request is aborted by client\x1B[0m');
+                        abortController.abort();
                     }
-                    abortController.abort();
-                    if (page) {
-                        page.close();
-                        page = undefined;
-                    }
+                    clean();
                     resolve();
-                };
+                });
 
-                res.on('close', abort);
-                abortEmitter.on('abort', abort);
+                abortEmitter.on('abort', () => {
+                    clean();
+                    resolve;
+                });
 
-                handleReq(browser, (p) => (page = p), abortController, abortEmitter, req, res)
-                    .then(() => {
-                        finished = true;
-                        resolve();
-                    })
+                handleReq(browser, pageSetter(resolve), abortController, abortEmitter, req, res)
                     .catch((e) => {
                         console.log(e);
-                        console.log('\n');
                     })
                     .finally(() => {
-                        finished = true;
+                        clean();
                         resolve();
                     });
-            })
-    );
+            });
+        } catch (e) {
+            console.log(e);
+        } finally {
+            clean();
+            return;
+        }
+    });
 
     app.listen(config.port, () => {
         console.log(`\n\x1B[37m\x1B[1mServer listening on ${config.port}\x1B[0m\n`);
