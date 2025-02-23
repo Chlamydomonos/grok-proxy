@@ -1,6 +1,19 @@
 import fs from 'fs';
+import path from 'path';
 
-if (!fs.existsSync('config.yml')) {
+let rootPath = path.resolve(__dirname);
+if (process.env.DATA_DIR) {
+    rootPath = process.env.DATA_DIR;
+}
+
+const configPath = path.resolve(rootPath, 'config.yml');
+const cookiesPath = path.resolve(rootPath, 'cookies');
+
+if (!fs.existsSync(cookiesPath)) {
+    fs.mkdirSync(cookiesPath, { recursive: true });
+}
+
+if (!fs.existsSync(configPath)) {
     const initialConfig = fs.readFileSync('config.yml.template').toString();
-    fs.writeFileSync('config.yml', initialConfig);
+    fs.writeFileSync(configPath, initialConfig);
 }

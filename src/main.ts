@@ -8,7 +8,7 @@ import { Cookie, createCookiePool } from './cookie-pool';
 import { initPage, type PageWrapper } from './init-page';
 
 console.log("\n\n\x1B[1m\x1B[32mChlamydomonos' Grok-3 Proxy\x1B[0m");
-console.log('\n\n\n\n');
+console.log('\n\n');
 
 const cookiePool = createCookiePool();
 
@@ -22,28 +22,45 @@ const handleReq = async (
 ) => {
     console.log(`\n\x1B[36m[${new Date().toLocaleString()}] Request received\x1B[0m`);
     const authorization = req.headers.authorization;
-    let cookie: { cookie: Cookie; file: string; index: number } | undefined;
+    let cookie: { cookie: Cookie; name: string } | undefined;
     if (authorization) {
-        const match = /#(0-9)+/.exec(authorization);
+        const match = /^Bearer (.+)/.exec(authorization);
         if (match) {
-            const cookieId = parseInt(match[1]);
-            console.log(`Trying to use cookie #${cookieId}`);
-            cookie = cookiePool.getCookie(cookieId);
+            const cookieName = match[1];
+            console.log(`Trying to use cookie ${cookieName}`);
+            if (cookiePool.has(cookieName)) {
+                cookie = cookiePool.getCookie(cookieName);
+                if (!cookie) {
+                    console.log('\x1B[31mNo quota for this cookie, aborted request\x1B[0m');
+                }
+            } else {
+                console.log('\x1B[33mThis cookie does not exist, trying to use a random cookie\x1B[0m');
+                cookie = cookiePool.getRandom();
+                if (!cookie) {
+                    console.log('\x1B[31mNo cookie available, aborted request\x1B[0m');
+                }
+            }
         } else {
             console.log(`Trying to use a random cookie`);
             cookie = cookiePool.getRandom();
+            if (!cookie) {
+                console.log('\x1B[31mNo cookie available, aborted request\x1B[0m');
+            }
         }
     } else {
+        console.log(`Trying to use a random cookie`);
         cookie = cookiePool.getRandom();
+        if (!cookie) {
+            console.log('\x1B[31mNo cookie available, aborted request\x1B[0m');
+        }
     }
 
     if (!cookie) {
-        console.log('\x1B[31mNo cookie available, aborted request\x1B[0m');
         res.status(429).send('Cookie已超出限额');
         return;
     }
 
-    console.log(`\x1B[32mUsing cookie #${cookie.index} (${cookie.file})\x1B[0m`);
+    console.log(`\x1B[32mUsing cookie \x1B[36m"${cookie.name}"\x1B[0m`);
 
     const pageWrapper = await initPage(browser, cookie.cookie, res, abortController);
     pageSetter(pageWrapper);

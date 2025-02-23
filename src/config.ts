@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { exit } from 'process';
 import yaml from 'yaml';
+import { dataDir } from './data-dir';
 
 interface Config {
     channel: string;
@@ -27,13 +28,21 @@ const checkConfig = (config: any): config is Config => {
 };
 
 const loadConfig = () => {
-    const configPath = path.resolve(__dirname, '../config.yml');
-    const config = yaml.parse(fs.readFileSync(configPath).toString());
-    if (!checkConfig(config)) {
-        console.log('\x1B[31mBroken config, try delete config.yml and regenerate with pnpm install\n\x1B[0m');
-        exit(0);
+    const configPath = path.resolve(dataDir, 'config.yml');
+    if (!fs.existsSync(configPath)) {
+        console.log('\x1B[31mConfig file does not exist, try regenerate with pnpm install\x1B[0m');
+        exit(-1);
     }
-    return config;
+    try {
+        const config = yaml.parse(fs.readFileSync(configPath).toString());
+        if (!checkConfig(config)) {
+            throw new Error();
+        }
+        return config;
+    } catch (e) {
+        console.log('\x1B[31mBroken config, try delete config.yml and regenerate with pnpm install\n\x1B[0m');
+        exit(-1);
+    }
 };
 
 export const config = loadConfig();
