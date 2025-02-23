@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-let rootPath = path.resolve(__dirname);
+let rootPath = path.resolve(import.meta.dirname);
 if (process.env.DATA_DIR) {
     rootPath = process.env.DATA_DIR;
 }
